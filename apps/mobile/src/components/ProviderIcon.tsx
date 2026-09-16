@@ -1,5 +1,5 @@
 import { Image } from "expo-image";
-import { Path, Svg } from "react-native-svg";
+import { Circle, Defs, G, LinearGradient, Mask, Path, Stop, Svg } from "react-native-svg";
 import { View } from "react-native";
 import { providerInstanceInitials } from "@t3tools/client-runtime/state/provider-instance-display";
 import { useAppearancePreferences } from "../features/settings/appearance/AppearancePreferencesProvider";
@@ -15,6 +15,61 @@ export function ProviderIcon(props: ProviderIconProps) {
   const isDarkMode = themeAppearance === "dark";
   const size = props.size ?? 16;
   const mono = isDarkMode ? "#e5e5e5" : "#171717";
+
+  if (props.provider === "bob") {
+    const shadowGradId = `bob-shadow-${size}`;
+    const bgGradId = `bob-bg-${size}`;
+    const maskId = `bob-mask-${size}`;
+    return (
+      <Svg width={size} height={size} viewBox="0 0 32 32">
+        <Defs>
+          <LinearGradient
+            id={shadowGradId}
+            x1="-2016.953"
+            y1="4199.361"
+            x2="-2005.859"
+            y2="4199.361"
+            gradientTransform="matrix(0 .631 1 0 -4183.361 1279.682)"
+            gradientUnits="userSpaceOnUse"
+          >
+            <Stop offset="0.134" stopOpacity="0" />
+            <Stop offset="0.873" />
+          </LinearGradient>
+          <LinearGradient
+            id={bgGradId}
+            x1="0"
+            y1="32"
+            x2="32"
+            y2="0"
+            gradientUnits="userSpaceOnUse"
+          >
+            <Stop offset="0.1" stopColor="#a16efb" />
+            <Stop offset="0.9" stopColor="#0e61fa" />
+          </LinearGradient>
+          <Mask id={maskId} x="0" y="0" width="32" height="32" maskUnits="userSpaceOnUse">
+            <Path
+              d="M29.718 15.25a13.67 13.67 0 0 0-9.991-12.476A1.747 1.747 0 0 0 18 1.25h-4c-.887 0-1.615.667-1.727 1.524A13.67 13.67 0 0 0 2.282 15.25H0v1.5h32v-1.5h-2.282zM12.25 4.337V13h1.5V3a.25.25 0 0 1 .25-.25h4a.25.25 0 0 1 .25.25v10h1.5V4.337a12.183 12.183 0 0 1 8.468 10.913H3.782A12.183 12.183 0 0 1 12.25 4.337z"
+              fill="white"
+            />
+            <Path d="M21 7v7H11V7h10z" fill={`url(#${shadowGradId})`} />
+          </Mask>
+        </Defs>
+        <G mask={`url(#${maskId})`}>
+          <Path fill={`url(#${bgGradId})`} d="M0 0h32v32H0z" />
+        </G>
+        <Path
+          d="M24 30.75H8a4.756 4.756 0 0 1-4.69-4H3c-.965 0-1.75-.785-1.75-1.75v-6h1.5v6c0 .138.112.25.25.25h1.75V26A3.254 3.254 0 0 0 8 29.25h16A3.254 3.254 0 0 0 27.25 26v-.75H29a.25.25 0 0 0 .25-.25v-6h1.5v6c0 .965-.785 1.75-1.75 1.75h-.31a4.756 4.756 0 0 1-4.69 4z"
+          fill="#001d6c"
+        />
+        <Circle cx="22" cy="21" r="2" fill="#001d6c" />
+        <Circle cx="10" cy="21" r="2" fill="#001d6c" />
+        <Path
+          d="M16 27.75a5.695 5.695 0 0 1-3.451-1.15.75.75 0 0 1 .903-1.199c1.476 1.111 3.617 1.111 5.099 0a.75.75 0 1 1 .901 1.199 5.696 5.696 0 0 1-3.45 1.15z"
+          fill="#001d6c"
+        />
+      </Svg>
+    );
+  }
 
   if (props.provider?.trim().toLowerCase() === "antigravity") {
     return (

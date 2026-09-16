@@ -174,6 +174,8 @@ export const DEFAULT_MODEL_BY_PROVIDER: Partial<Record<ProviderDriverKind, strin
   [GROK_DRIVER_KIND]: "grok-build",
   [OPENCODE_DRIVER_KIND]: "openai/gpt-5",
   [ProviderDriverKind.make("antigravity")]: ANTIGRAVITY_DEFAULT_MODEL,
+  // Product slug, not an ACP model id. The Bob adapter treats it as "the session's current model".
+  [ProviderDriverKind.make("bob")]: "bob-build",
 };
 
 /** Per-provider text generation model defaults. */
@@ -185,6 +187,7 @@ export const DEFAULT_TEXT_GENERATION_MODEL_BY_PROVIDER: Partial<
   [CLAUDE_DRIVER_KIND]: "claude-haiku-4-5",
   [CURSOR_DRIVER_KIND]: "composer-2",
   [OPENCODE_DRIVER_KIND]: "openai/gpt-5",
+  [ProviderDriverKind.make("bob")]: "bob-build",
 };
 
 export const MODEL_SLUG_ALIASES_BY_PROVIDER: Partial<
