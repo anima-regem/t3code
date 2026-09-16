@@ -23,46 +23,99 @@ t3_home="${T3CODE_HOME:-$HOME/.t3}"
 bin_dir="${T3CODE_INSTALL_BIN_DIR:-$HOME/.local/bin}"
 
 fail() {
-  printf 't3 install: %s\n' "$1" >&2
+  printf '\nt3 install: %s\n' "$1" >&2
   exit 1
 }
 
-# Keep piped installs interactive when stderr is still a terminal.
+# ANSI stays on stderr, so `curl ... | sh` still gets progress.
 interactive=false
 if [ -t 2 ] && [ "${TERM:-}" != dumb ]; then interactive=true; fi
-step() { printf '\n[%s/5] %s\n' "$1" "$2" >&2; }
-if "$interactive"; then
-  printf '%s\n' '' '  TTTTT  3333' '    T       3' '    T     33' '    T       3' '    T    3333' '' '  T3 Code' >&2
+reset= bold= muted= accent= green=
+if "$interactive" && [ -z "${NO_COLOR:-}" ]; then
+  reset="$(printf '\033[0m')"; bold="$(printf '\033[1m')"
+  muted="$(printf '\033[2m')"; accent="$(printf '\033[33m')"; green="$(printf '\033[32m')"
 fi
-step 1 "Finding your release..."
+step() {
+  if "$interactive"; then printf '\r\033[2K  %s%s%s' "$muted" "$1" "$reset" >&2
+  else printf '  %s\n' "$1" >&2; fi
+}
+if "$interactive"; then
+  printf '\n%s' "$bold" >&2
+  printf '  %s\n' '██████████ ████████ ' >&2
+  printf '  %s\n' '    ███       ▄██▀       T3 Code' >&2
+  printf '  %s%s     %sCLI installer%s\n' '    ███       ████▄ ' "$reset" "$muted" "$reset$bold" >&2
+  printf '  %s\n' '    ███    ▄     ███' >&2
+  printf '  %s\n' '    ███    ███████▀ ' >&2
+  printf '%s\n' "$reset" >&2
+fi
+step "Finding your release..."
 
 # Exit 44 on a 404 so callers can tell "no such asset" from a network failure.
 fetch() {
   if command -v curl >/dev/null 2>&1; then
-    curl_progress="-sS"
-    if [ "${3:-}" = progress ] && "$interactive"; then curl_progress="-#S"; fi
-    status="$(curl "$curl_progress" -L -w '%{http_code}' "$1" -o "$2")" || return 1
+    status="$(curl -sSL -w '%{http_code}' "$1" -o "$2")" || return 1
     case "$status" in
       2??) return 0 ;;
       404) return 44 ;;
       *) printf 'GET %s returned HTTP %s\n' "$1" "$status" >&2; return 1 ;;
     esac
   elif command -v wget >/dev/null 2>&1; then
-    if [ "${3:-}" = progress ] && "$interactive"; then
-      # GNU wget can keep diagnostics quiet while showing its native bar.
-      if wget --help 2>&1 | grep -q -- '--show-progress'; then
-        wget -q --show-progress "$1" -O "$2"
-      else
-        wget "$1" -O "$2"
-      fi
-      return $?
-    fi
     wget -q --server-response "$1" -O "$2" 2>"$2.headers" && rm -f "$2.headers" && return 0
     if grep -q ' 404 ' "$2.headers" 2>/dev/null; then rm -f "$2.headers"; return 44; fi
     cat "$2.headers" >&2; rm -f "$2.headers"; return 1
   else
     fail "curl or wget is required"
   fi
+}
+
+# Poll the file written by the downloader; no progress-output parsing or extra request.
+download() {
+  if ! "$interactive"; then fetch "$1" "$2"; return; fi
+  if command -v curl >/dev/null 2>&1; then
+    curl -fsSL -D "$2.headers" "$1" -o "$2" 2>"$2.errors" &
+  else
+    wget -q --server-response "$1" -O "$2" 2>"$2.headers" &
+  fi
+  download_pid=$!
+  previous=-1
+  cr="$(printf '\r')"
+  while kill -0 "$download_pid" 2>/dev/null; do
+    bytes=0; total=0
+    if [ -f "$2" ]; then bytes="$(wc -c < "$2")"; fi
+    if [ -f "$2.headers" ]; then
+      while read -r key value; do
+        case "$key" in
+          HTTP/*) total=0 ;;
+          [Cc]ontent-[Ll]ength:) total="${value%"$cr"}" ;;
+        esac
+      done < "$2.headers"
+    fi
+    case "$total" in ''|*[!0-9]*) total=0 ;; esac
+    if [ "$bytes" -ne "$previous" ]; then
+      if [ "$total" -gt 0 ]; then
+        percent=$((bytes * 100 / total)); [ "$percent" -le 100 ] || percent=100
+        filled=$((percent * 32 / 100)); bar=; rest=; n=0
+        while [ "$n" -lt 32 ]; do
+          if [ "$n" -lt "$filled" ]; then bar="${bar}■"; else rest="${rest}·"; fi
+          n=$((n + 1))
+        done
+        printf '\r\033[2K  %s%s%s%s%s %3d%%' "$accent" "$bar" "$reset$muted" "$rest" "$reset" "$percent" >&2
+      else
+        printf '\r\033[2K  %sDownloading%s  %s KB' "$muted" "$reset" "$((bytes / 1024))" >&2
+      fi
+      previous="$bytes"
+    fi
+    sleep 0.1
+  done
+  result=0; wait "$download_pid" || result=$?
+  download_pid=
+  if [ "$result" -ne 0 ]; then
+    printf '\n' >&2
+    cat "$2.errors" "$2.headers" 2>/dev/null >&2 || true
+    return "$result"
+  fi
+  printf '\r\033[2K  %s■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■%s 100%%\n' "$accent" "$reset" >&2
+  rm -f "$2.headers" "$2.errors"
 }
 
 case "$(uname -s)" in
@@ -120,13 +173,18 @@ versions_dir="${t3_home}/runtime/versions"
 target_dir="${versions_dir}/${version}"
 
 if [ -f "${target_dir}/.install-complete" ] && [ "$(cat "${target_dir}/.install-complete")" = "$version" ]; then
-  printf 't3 %s is already installed at %s\n' "$version" "$target_dir"
+  step "Version ${version} is already downloaded."
 else
   mkdir -p "$versions_dir"
   staging="$(mktemp -d "${versions_dir}/.staging-XXXXXX")"
-  trap 'rm -rf "$staging"' EXIT
+  download_pid=
+  trap '[ -z "$download_pid" ] || { kill "$download_pid" 2>/dev/null || true; wait "$download_pid" 2>/dev/null || true; }; rm -rf "$staging"' EXIT
+  trap 'printf "\n" >&2; exit 130' INT
+  trap 'printf "\n" >&2; exit 143' TERM
 
-  step 2 "Downloading T3 Code ${version}..."
+  if "$interactive"; then printf '\r\033[2K' >&2; fi
+  printf '  %sInstalling%s T3 Code %s%s%s\n\n' "$muted" "$reset" "$bold" "$version" "$reset" >&2
+  step "Downloading..."
   fetch_status=0
   fetch "${base_url}/v${version}/SHA256SUMS" "${staging}/SHA256SUMS" || fetch_status=$?
   if [ "$fetch_status" -eq 44 ]; then
@@ -134,15 +192,15 @@ else
   elif [ "$fetch_status" -ne 0 ]; then
     fail "could not download the release checksums"
   fi
-  fetch "${base_url}/v${version}/${archive}" "${staging}/${archive}" progress
+  download "${base_url}/v${version}/${archive}" "${staging}/${archive}"
 
-  step 3 "Verifying the download..."
+  step "Verifying the download..."
   expected="$(grep " \*\{0,1\}${archive}\$" "${staging}/SHA256SUMS" | cut -d' ' -f1)"
   [ -n "$expected" ] || fail "${archive} is not listed in SHA256SUMS"
   actual="$(checksum "${staging}/${archive}")"
   [ "$actual" = "$expected" ] || fail "checksum mismatch for ${archive}"
 
-  step 4 "Extracting T3 Code..."
+  step "Extracting T3 Code..."
   tar -xzf "${staging}/${archive}" -C "$staging" --strip-components=1
   rm -f "${staging}/${archive}" "${staging}/SHA256SUMS"
   "${staging}/t3" --version >/dev/null || fail "the downloaded executable does not run"
@@ -153,11 +211,12 @@ else
   trap - EXIT
 fi
 
-step 5 "Setting up the t3 command..."
+step "Setting up the t3 command..."
 mkdir -p "$bin_dir"
 ln -sfn "${target_dir}/t3" "${bin_dir}/t3"
-printf '\nInstalled t3 %s\n  %s -> %s\n' "$version" "${bin_dir}/t3" "${target_dir}/t3"
+if "$interactive"; then printf '\r\033[2K' >&2; fi
+printf '  %sInstalled T3 Code %s%s\n\n' "$green" "$version" "$reset" >&2
 case ":${PATH}:" in
-  *":${bin_dir}:"*) ;;
-  *) printf 'Add %s to your PATH to run `t3`.\n' "$bin_dir" ;;
+  *":${bin_dir}:"*) printf '  Run %st3%s to get started.\n\n' "$bold" "$reset" ;;
+  *) printf '  Add %s to your PATH, then run %st3%s.\n\n' "$bin_dir" "$bold" "$reset" ;;
 esac

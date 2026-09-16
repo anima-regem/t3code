@@ -358,8 +358,14 @@ const runUpdate = Effect.fn("cli.update.run")(function* (input: {
       reason: `'${input.requestedVersion}' is not an exact t3 version.`,
     });
   }
-  yield* Console.log("Checking for updates...");
-  const targetVersion = input.requestedVersion ?? (yield* resolveNewestVersion(channel));
+  const progress = createUpdateProgress();
+  progress.banner("CLI update");
+  progress.status("Checking for updates...");
+  const targetVersion = yield* (
+    input.requestedVersion === undefined
+      ? resolveNewestVersion(channel)
+      : Effect.succeed(input.requestedVersion)
+  ).pipe(Effect.ensuring(Effect.sync(progress.finish)));
   const targetChannel = cliReleaseChannelOf(targetVersion);
 
   // Preview is a maintainers' dogfooding train: it is cut by hand from
@@ -448,14 +454,17 @@ const runUpdate = Effect.fn("cli.update.run")(function* (input: {
       Effect.orElseSucceed(() => false),
     );
 
-  yield* Console.log(
+  progress.heading(
     executableCurrent && restartPending
       ? `The background service is still running the version before ${targetVersion} (${targetChannel}).`
       : executableCurrent
         ? `Updating the background service ${serviceVersion ?? "(unknown version)"} -> ${targetVersion} (${targetChannel}).`
         : alreadyOnDisk
-          ? `Switching t3 ${currentVersion} -> ${targetVersion} (${targetChannel}, already downloaded).`
-          : `Updating t3 ${currentVersion} -> ${targetVersion} (${targetChannel}).`,
+          ? "Switching T3 Code"
+          : "Updating T3 Code",
+    executableCurrent
+      ? ""
+      : `${currentVersion} → ${targetVersion}${targetChannel === "stable" ? "" : ` (${targetChannel})`}`,
   );
   let restartService = false;
   if (serviceInstalled && !serviceCurrent) {
@@ -478,7 +487,6 @@ const runUpdate = Effect.fn("cli.update.run")(function* (input: {
     }
   }
 
-  const progress = createUpdateProgress();
   const runtime = yield* ensurePinnedRuntimeInstalled({
     onProgress: progress.report,
     baseDir: input.baseDir,
@@ -570,12 +578,11 @@ const runUpdate = Effect.fn("cli.update.run")(function* (input: {
     serviceUpdated = restartService;
   }
 
-  yield* Console.log("");
-  yield* Console.log(`t3 ${targetVersion} is installed at ${runtime.entryPath}`);
+  progress.success(`Installed T3 Code ${targetVersion}`);
   if (Option.isSome(repointed)) {
-    yield* Console.log(`  ${repointed.value} now runs ${targetVersion}`);
+    yield* Console.log("  Run t3 to get started.\n");
   } else {
-    yield* Console.log(`  Run it as ${runtime.entryPath}, or point your \`t3\` launcher at it.`);
+    yield* Console.log(`  Run ${runtime.entryPath}\n`);
   }
   if (serviceUpdated) {
     yield* Console.log(`  Background service restarted on ${targetVersion}`);

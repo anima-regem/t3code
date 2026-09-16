@@ -26,18 +26,84 @@ function Fail([string] $message) {
   exit 1
 }
 
-function Step([int] $number, [string] $message) {
-  Write-Host "`n[$number/5] $message"
+$terminal = -not [Console]::IsErrorRedirected -and $env:TERM -ne "dumb"
+$interactive = $terminal -and $Host.UI.SupportsVirtualTerminal
+$esc = [char]27
+$reset = $bold = $muted = $accent = $green = ""
+if ($interactive -and -not $env:NO_COLOR) {
+  $reset = "$esc[0m"; $bold = "$esc[1m"; $muted = "$esc[2m"
+  $accent = "$esc[33m"; $green = "$esc[32m"
 }
-# Scope the preference to the download, including when invoked through iex.
+function Step([string] $message) {
+  if ($interactive) { [Console]::Error.Write("`r$esc[2K  $muted$message$reset") }
+  else { [Console]::Error.WriteLine("  $message") }
+}
+function Draw-Download([long] $bytes, [long] $total) {
+  if (-not $interactive) { return }
+  if ($total -gt 0) {
+    $percent = [Math]::Min(100, [Math]::Floor($bytes * 100.0 / $total))
+    $filled = [int][Math]::Floor($percent * 32 / 100)
+    $bar = ([string][char]0x25A0) * $filled
+    $rest = ([string][char]0x00B7) * (32 - $filled)
+    [Console]::Error.Write(("`r$esc[2K  $accent$bar$reset$muted$rest$reset {0,3}%" -f $percent))
+  } else {
+    [Console]::Error.Write("`r$esc[2K  ${muted}Downloading$reset  $([Math]::Floor($bytes / 1024)) KB")
+  }
+}
 function Fetch([string] $uri, [string] $destination, [switch] $progress) {
-  $ProgressPreference = if ($progress -and -not [Console]::IsOutputRedirected -and $env:TERM -ne "dumb") { "Continue" } else { "SilentlyContinue" }
-  Invoke-WebRequest -Uri $uri -OutFile $destination -UseBasicParsing
+  if (-not $progress -or -not $interactive) {
+    $ProgressPreference = if ($progress -and $terminal) { "Continue" } else { "SilentlyContinue" }
+    Invoke-WebRequest -Uri $uri -OutFile $destination -UseBasicParsing
+    return
+  }
+  # Read the response once, displaying actual bytes received at most ten times a second.
+  Add-Type -AssemblyName System.Net.Http
+  $client = New-Object System.Net.Http.HttpClient
+  $response = $source = $file = $null
+  try {
+    $response = $client.GetAsync($uri, [System.Net.Http.HttpCompletionOption]::ResponseHeadersRead).GetAwaiter().GetResult()
+    $response.EnsureSuccessStatusCode() | Out-Null
+    $source = $response.Content.ReadAsStreamAsync().GetAwaiter().GetResult()
+    $file = [IO.File]::Create($destination)
+    $buffer = New-Object byte[] 65536
+    $bytes = 0L
+    $clock = [Diagnostics.Stopwatch]::StartNew()
+    Draw-Download 0 $response.Content.Headers.ContentLength
+    while (($count = $source.Read($buffer, 0, $buffer.Length)) -gt 0) {
+      $file.Write($buffer, 0, $count)
+      $bytes += $count
+      if ($clock.ElapsedMilliseconds -ge 100) {
+        Draw-Download $bytes $response.Content.Headers.ContentLength
+        $clock.Restart()
+      }
+    }
+    Draw-Download $bytes $bytes
+    [Console]::Error.WriteLine()
+  } finally {
+    if ($file) { $file.Dispose() }
+    if ($source) { $source.Dispose() }
+    if ($response) { $response.Dispose() }
+    $client.Dispose()
+  }
 }
-if (-not [Console]::IsOutputRedirected -and $env:TERM -ne "dumb") {
-  Write-Host "`n  TTTTT  3333`n    T       3`n    T     33`n    T       3`n    T    3333`n`n  T3 Code"
+if ($interactive) {
+  # Block characters are constructed so this file also loads correctly in PowerShell 5.1.
+  $mark = @(
+    "########## ######## ",
+    "    ###       _##^  ",
+    "    ###       ####_ ",
+    "    ###    _     ###",
+    "    ###    #######^ "
+  )
+  [Console]::Error.WriteLine()
+  for ($i = 0; $i -lt $mark.Length; $i++) {
+    $row = $mark[$i].Replace('#', [char]0x2588).Replace('^', [char]0x2580).Replace('_', [char]0x2584)
+    $label = if ($i -eq 1) { "     ${bold}T3 Code$reset" } elseif ($i -eq 2) { "     ${muted}CLI installer$reset" } else { "" }
+    [Console]::Error.WriteLine("  $bold$row$reset$label")
+  }
+  [Console]::Error.WriteLine()
 }
-Step 1 "Finding your release..."
+Step "Finding your release..."
 
 # PROCESSOR_ARCHITEW6432 reports the real machine when a 32-bit PowerShell
 # runs under WOW64; RuntimeInformation needs .NET 4.7.1+, which 5.1 hosts
@@ -80,13 +146,15 @@ $targetDir = Join-Path $versionsDir $version
 $marker = Join-Path $targetDir ".install-complete"
 
 if ((Test-Path $marker) -and ((Get-Content $marker -Raw).Trim() -eq $version)) {
-  Write-Host "t3 $version is already installed at $targetDir"
+  Step "Version $version is already downloaded."
 } else {
   New-Item -ItemType Directory -Force -Path $versionsDir | Out-Null
   $staging = Join-Path $versionsDir (".staging-" + [System.IO.Path]::GetRandomFileName())
   New-Item -ItemType Directory -Path $staging | Out-Null
   try {
-    Step 2 "Downloading T3 Code $version..."
+    if ($interactive) { [Console]::Error.Write("`r$esc[2K") }
+    [Console]::Error.WriteLine("  ${muted}Installing$reset T3 Code $bold$version$reset`n")
+    Step "Downloading..."
     try {
       Fetch "$baseUrl/v$version/SHA256SUMS" (Join-Path $staging "SHA256SUMS")
     } catch {
@@ -98,7 +166,7 @@ if ((Test-Path $marker) -and ((Get-Content $marker -Raw).Trim() -eq $version)) {
     }
     Fetch "$baseUrl/v$version/$archive" (Join-Path $staging $archive) -progress
 
-    Step 3 "Verifying the download..."
+    Step "Verifying the download..."
 
     $expected = (Get-Content (Join-Path $staging "SHA256SUMS") | Where-Object { $_ -match "\s\*?$([regex]::Escape($archive))$" } | Select-Object -First 1)
     if (-not $expected) { Fail "$archive is not listed in SHA256SUMS" }
@@ -106,8 +174,13 @@ if ((Test-Path $marker) -and ((Get-Content $marker -Raw).Trim() -eq $version)) {
     $actual = (Get-FileHash -Algorithm SHA256 (Join-Path $staging $archive)).Hash.ToLowerInvariant()
     if ($actual -ne $expected) { Fail "checksum mismatch for $archive" }
 
-    Step 4 "Extracting T3 Code..."
-    Expand-Archive -Path (Join-Path $staging $archive) -DestinationPath $staging -Force
+    Step "Extracting T3 Code..."
+    # The archive module reads the global preference, not the caller's local scope.
+    $savedProgress = $global:ProgressPreference
+    try {
+      $global:ProgressPreference = "SilentlyContinue"
+      Expand-Archive -Path (Join-Path $staging $archive) -DestinationPath $staging -Force
+    } finally { $global:ProgressPreference = $savedProgress }
     # The archive wraps everything in one directory named after its stem.
     Get-ChildItem (Join-Path $staging $stem) | Move-Item -Destination $staging
     Remove-Item (Join-Path $staging $stem), (Join-Path $staging $archive), (Join-Path $staging "SHA256SUMS") -Recurse -Force
@@ -124,14 +197,16 @@ if ((Test-Path $marker) -and ((Get-Content $marker -Raw).Trim() -eq $version)) {
   }
 }
 
-Step 5 "Setting up the t3 command..."
+Step "Setting up the t3 command..."
 New-Item -ItemType Directory -Force -Path $binDir | Out-Null
 $shim = Join-Path $binDir "t3.cmd"
 # UTF-8 without a BOM: cmd.exe reads the shim as-is, and ASCII would corrupt
 # non-ASCII characters in the user's home path.
 [System.IO.File]::WriteAllText($shim, "@echo off`r`n`"$(Join-Path $targetDir 't3.exe')`" %*", (New-Object System.Text.UTF8Encoding $false))
-Write-Host "`nInstalled t3 $version"
-Write-Host "  $shim -> $(Join-Path $targetDir 't3.exe')"
+if ($interactive) { [Console]::Error.Write("`r$esc[2K") }
+[Console]::Error.WriteLine("  ${green}Installed T3 Code $version$reset`n")
 if (($env:PATH -split ";") -notcontains $binDir) {
-  Write-Host "Add $binDir to your PATH to run t3."
+  Write-Host "  Add $binDir to your PATH, then run ${bold}t3$reset.`n"
+} else {
+  Write-Host "  Run ${bold}t3$reset to get started.`n"
 }
