@@ -32,7 +32,7 @@ $esc = [char]27
 $reset = $bold = $muted = $accent = $green = ""
 if ($interactive -and -not $env:NO_COLOR) {
   $reset = "$esc[0m"; $bold = "$esc[1m"; $muted = "$esc[2m"
-  $accent = "$esc[33m"; $green = "$esc[32m"
+  $accent = "$esc[94m"; $green = "$esc[32m"
 }
 function Step([string] $message) {
   if ($interactive) { [Console]::Error.Write("`r$esc[2K  $muted$message$reset") }

@@ -33,7 +33,7 @@ if [ -t 2 ] && [ "${TERM:-}" != dumb ]; then interactive=true; fi
 reset= bold= muted= accent= green=
 if "$interactive" && [ -z "${NO_COLOR:-}" ]; then
   reset="$(printf '\033[0m')"; bold="$(printf '\033[1m')"
-  muted="$(printf '\033[2m')"; accent="$(printf '\033[33m')"; green="$(printf '\033[32m')"
+  muted="$(printf '\033[2m')"; accent="$(printf '\033[94m')"; green="$(printf '\033[32m')"
 fi
 step() {
   if "$interactive"; then printf '\r\033[2K  %s%s%s' "$muted" "$1" "$reset" >&2

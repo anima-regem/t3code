@@ -359,7 +359,6 @@ const runUpdate = Effect.fn("cli.update.run")(function* (input: {
     });
   }
   const progress = createUpdateProgress();
-  progress.banner("CLI update");
   progress.status("Checking for updates...");
   const targetVersion = yield* (
     input.requestedVersion === undefined

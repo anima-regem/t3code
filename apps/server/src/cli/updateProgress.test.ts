@@ -94,7 +94,7 @@ it("uses color only in capable terminals that have not requested NO_COLOR", () =
     },
   });
   progress.report({ stage: "download", received: 50, total: 100 });
-  expect(chunks.join("")).toContain("\x1b[33m");
+  expect(chunks.join("")).toContain("\x1b[94m");
   output.report({ stage: "download", received: 50, total: 100 });
-  expect(output.text()).not.toContain("\x1b[33m");
+  expect(output.text()).not.toContain("\x1b[94m");
 });

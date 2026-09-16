@@ -25,31 +25,6 @@ export function createUpdateProgress(
   return {
     finish,
     status,
-    banner(label: string) {
-      if (!interactive) return;
-      if ((output.columns || 80) < 42) {
-        output.write(`\n  ${style(1, "T3 Code")}\n  ${style(2, label)}\n\n`);
-        return;
-      }
-      const mark = [
-        "██████████ ████████ ",
-        "    ███       ▄██▀  ",
-        "    ███       ████▄ ",
-        "    ███    ▄     ███",
-        "    ███    ███████▀ ",
-      ];
-      output.write("\n");
-      for (const [index, row] of mark.entries()) {
-        const text =
-          index === 1
-            ? `     ${style(1, "T3 Code")}`
-            : index === 2
-              ? `     ${style(2, label)}`
-              : "";
-        output.write(`  ${style(1, row)}${text}\n`);
-      }
-      output.write("\n");
-    },
     heading(message: string, detail = "") {
       finish();
       output.write(`  ${style(2, message)}${detail ? ` ${style(1, detail)}` : ""}\n\n`);
@@ -85,7 +60,7 @@ export function createUpdateProgress(
         const percent = Math.min(100, Math.floor((received / total) * 100));
         const width = Math.max(1, Math.min(32, columns - 10));
         const filled = Math.floor((percent * width) / 100);
-        line = `  ${style(33, "■".repeat(filled))}${style(2, "·".repeat(width - filled))} ${String(percent).padStart(3)}%`;
+        line = `  ${style(94, "■".repeat(filled))}${style(2, "·".repeat(width - filled))} ${String(percent).padStart(3)}%`;
         if (columns >= 68) line += `  ${style(2, `${mb(received)} / ${mb(total)} MB`)}`;
       }
       output.write(`\r\x1b[2K${line}`);
