@@ -111,7 +111,7 @@ download() {
   download_pid=
   if [ "$result" -ne 0 ]; then
     printf '\n' >&2
-    cat "$2.errors" "$2.headers" 2>/dev/null >&2 || true
+    if [ -f "$2.errors" ]; then cat "$2.errors" >&2; else cat "$2.headers" >&2; fi
     return "$result"
   fi
   printf '\r\033[2K  %s■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■%s 100%%\n' "$accent" "$reset" >&2

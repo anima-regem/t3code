@@ -83,6 +83,7 @@ describe.skipIf(HostProcessPlatform.defaultValue() !== "linux")("installer termi
         const versions = NodePath.join(root, "home/runtime/versions");
         if (fail) {
           expect(code).not.toBe(0);
+          expect(output).toContain("500");
           expect(output).not.toContain("100%");
           expect(output).not.toContain("Installed T3 Code");
           expect(await NodeFSP.readdir(versions)).toEqual([]);
