@@ -45,9 +45,9 @@ function Draw-Download([long] $bytes, [long] $total) {
     $filled = [int][Math]::Floor($percent * 32 / 100)
     $bar = ([string][char]0x25A0) * $filled
     $rest = ([string][char]0x00B7) * (32 - $filled)
-    [Console]::Error.Write(("`r$esc[2K  $accent$bar$reset$muted$rest$reset {0,3}%" -f $percent))
+    [Console]::Error.Write(("`r$esc[2K  $accent$bar$reset$muted$rest$reset {0,3}%  $muted{1:F1} / {2:F1} MB$reset" -f $percent, ($bytes / 1MB), ($total / 1MB)))
   } else {
-    [Console]::Error.Write("`r$esc[2K  ${muted}Downloading$reset  $([Math]::Floor($bytes / 1024)) KB")
+    [Console]::Error.Write(("`r$esc[2K  ${muted}Downloading$reset  {0:F1} MB" -f ($bytes / 1MB)))
   }
 }
 function Fetch([string] $uri, [string] $destination, [switch] $progress) {

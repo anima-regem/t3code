@@ -68,6 +68,10 @@ fetch() {
   fi
 }
 
+mb() {
+  tenths=$((($1 * 10 + 524288) / 1048576))
+  printf '%s.%s' "$((tenths / 10))" "$((tenths % 10))"
+}
 # Poll the file written by the downloader; no progress-output parsing or extra request.
 download() {
   if ! "$interactive"; then fetch "$1" "$2"; return; fi
@@ -99,9 +103,9 @@ download() {
           if [ "$n" -lt "$filled" ]; then bar="${bar}■"; else rest="${rest}·"; fi
           n=$((n + 1))
         done
-        printf '\r\033[2K  %s%s%s%s%s %3d%%' "$accent" "$bar" "$reset$muted" "$rest" "$reset" "$percent" >&2
+        printf '\r\033[2K  %s%s%s%s%s %3d%%  %s%s / %s MB%s' "$accent" "$bar" "$reset$muted" "$rest" "$reset" "$percent" "$muted" "$(mb "$bytes")" "$(mb "$total")" "$reset" >&2
       else
-        printf '\r\033[2K  %sDownloading%s  %s KB' "$muted" "$reset" "$((bytes / 1024))" >&2
+        printf '\r\033[2K  %sDownloading%s  %s MB' "$muted" "$reset" "$(mb "$bytes")" >&2
       fi
       previous="$bytes"
     fi
@@ -114,7 +118,8 @@ download() {
     if [ -f "$2.errors" ]; then cat "$2.errors" >&2; else cat "$2.headers" >&2; fi
     return "$result"
   fi
-  printf '\r\033[2K  %s■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■%s 100%%\n' "$accent" "$reset" >&2
+  size="$(mb "$(wc -c < "$2")")"
+  printf '\r\033[2K  %s■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■%s 100%%  %s%s / %s MB%s\n' "$accent" "$reset" "$muted" "$size" "$size" "$reset" >&2
   rm -f "$2.headers" "$2.errors"
 }
 

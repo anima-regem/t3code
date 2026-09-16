@@ -92,6 +92,7 @@ describe.skipIf(HostProcessPlatform.defaultValue() !== "linux")("installer termi
           expect(code).toBe(0);
           expect(sawPartialProgress).toBe(true);
           expect(output).toContain("100%");
+          expect(output).toContain("0.1 / 0.1 MB");
           expect(output).toContain("Installed T3 Code 1.2.3");
           expect(
             await NodeFSP.readFile(NodePath.join(versions, version, ".install-complete"), "utf8"),
