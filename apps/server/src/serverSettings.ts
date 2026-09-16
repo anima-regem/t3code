@@ -319,10 +319,21 @@ function restoreUsedProviders(
   };
 }
 
+/**
+ * Driver kinds whose text-generation implementation is a stub (they always
+ * fail). These are excluded from the automatic fallback so the server does
+ * not silently select a provider that cannot generate titles, commit
+ * messages, or branch names.
+ */
+const DRIVERS_WITHOUT_TEXT_GENERATION: ReadonlySet<string> = new Set();
+
 function resolveTextGenerationProvider(settings: ServerSettings): ServerSettings {
-  return isModelSelectionProviderEnabled(settings, settings.textGenerationModelSelection)
-    ? settings
-    : fallbackTextGenerationProvider(settings);
+  const selection = settings.textGenerationModelSelection;
+  const isEnabled = isModelSelectionProviderEnabled(settings, selection);
+  if (isEnabled && !DRIVERS_WITHOUT_TEXT_GENERATION.has(selection.instanceId)) {
+    return settings;
+  }
+  return fallbackTextGenerationProvider(settings);
 }
 
 function fallbackTextGenerationProvider(settings: ServerSettings): ServerSettings {
@@ -330,6 +341,7 @@ function fallbackTextGenerationProvider(settings: ServerSettings): ServerSetting
   // instance wins over the legacy providers map, which decodes to defaults
   // (codex enabled) when the Providers UI has only written providerInstances.
   const fallbackEntry = Object.entries(settings.providers).find(([driver, provider]) => {
+    if (DRIVERS_WITHOUT_TEXT_GENERATION.has(driver)) return false;
     const instance = settings.providerInstances[ProviderInstanceId.make(driver)];
     return instance === undefined ? provider.enabled : resolveProviderInstanceEnabled(instance);
   });
