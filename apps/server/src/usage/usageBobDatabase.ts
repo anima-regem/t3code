@@ -77,7 +77,7 @@ export function readBobDatabaseRecords(
         AND m.created_at < ?
     `);
 
-    const rows = stmt.all(sinceMs, untilMs) as BobMessageRow[];
+    const rows = stmt.all(sinceMs, untilMs) as unknown as BobMessageRow[];
     const records: UsageRecord[] = [];
 
     for (const row of rows) {
@@ -149,7 +149,7 @@ function parseBobRow(row: BobMessageRow): UsageRecord | null {
   // task_id doubles as the session ID — it is stable across all messages in
   // one Bob task and maps cleanly to a "session" for bucketing purposes.
   return {
-    provider: "bob",
+    provider: "bob" as const,
     timestampMs,
     model,
     sessionId: row.task_id,

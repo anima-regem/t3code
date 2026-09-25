@@ -871,8 +871,10 @@ export function makeBobAdapter(bobSettings: BobSettings, options?: BobAdapterLiv
             yield* withThreadLock(
               input.threadId,
               settlePromptInFlight(input.threadId, prepared.turnId, prepared.acpSessionId, {
-                errorMessage,
-                completedStopReason: errorMessage ? undefined : stopReason,
+                ...(errorMessage !== undefined ? { errorMessage } : {}),
+                ...(errorMessage === undefined && stopReason !== undefined
+                  ? { completedStopReason: stopReason }
+                  : {}),
               }),
             );
           }

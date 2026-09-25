@@ -11,6 +11,7 @@ const dummyConfig: BobSettings = {
   enabled: true,
   binaryPath: "",
   apiKey: "",
+  homePath: "",
   customModels: [],
 };
 
