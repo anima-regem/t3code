@@ -1,4 +1,4 @@
-import { type BobSettings, ProviderDriverKind, type RuntimeMode } from "@t3tools/contracts";
+import { type BobSettings, type RuntimeMode } from "@t3tools/contracts";
 import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -25,8 +25,6 @@ export const BOB_AUTH_METHOD_SSO = "sso";
  * environment forwarded to the Bob Shell process.
  */
 export const BOB_AUTH_METHOD_API_KEY = "api_key";
-
-const BOB_DRIVER_KIND = ProviderDriverKind.make("bob");
 
 type BobAcpRuntimeBobSettings = Pick<BobSettings, "binaryPath">;
 

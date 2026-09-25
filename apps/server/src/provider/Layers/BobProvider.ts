@@ -18,7 +18,6 @@ import { createModelCapabilities } from "@t3tools/shared/model";
 import { resolveSpawnCommand } from "@t3tools/shared/shell";
 
 import {
-  AUTH_PROBE_TIMEOUT_MS,
   buildServerProvider,
   COMPACT_SLASH_COMMAND,
   isCommandMissingCause,
