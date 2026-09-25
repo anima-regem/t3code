@@ -1,6 +1,6 @@
 import type { UsageProviderKind } from "@t3tools/contracts";
 
-import { ClaudeAI, GrokIcon, type Icon, OpenAI } from "../Icons";
+import { BobIcon, ClaudeAI, GrokIcon, type Icon, OpenAI } from "../Icons";
 
 type UsageProviderPresentation = {
   readonly label: string;
@@ -29,6 +29,12 @@ export const PROVIDER_PRESENTATION = {
     // Contrast-aware neutral between the Codex series and muted chart chrome.
     color: "color-mix(in oklab, var(--contrast-foreground) 72%, var(--background))",
     mark: GrokIcon,
+  },
+  bob: {
+    label: "Bob",
+    // IBM Bob brand gradient runs purple → blue; mid-point is a readable purple.
+    color: "#7c3aed",
+    mark: BobIcon,
   },
 } satisfies Record<UsageProviderKind, UsageProviderPresentation>;
 

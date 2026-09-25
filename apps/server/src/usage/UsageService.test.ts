@@ -102,6 +102,9 @@ const serviceLayers = (input: {
     Layer.provideMerge(
       Layer.succeed(HostProcessEnvironment, {
         GROK_HOME: NodePath.join(input.home, "grok"),
+        // Point Bob at a subdirectory of the temp home so no real ~/.bob/db/bob.db
+        // leaks into test results when the test machine has Bob installed.
+        BOB_HOME: NodePath.join(input.home, "bob"),
         ...input.environment,
       }),
     ),

@@ -15,6 +15,7 @@
 import * as NodeOS from "node:os";
 
 import {
+  BobSettings,
   ClaudeSettings,
   CodexSettings,
   type ProviderInstanceConfig,
@@ -47,6 +48,7 @@ import { expandHomePath } from "../pathExpansion.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import { resolveCodexHomeLayout } from "../provider/Drivers/CodexHomeLayout.ts";
 import { mergeProviderInstanceEnvironment } from "../provider/ProviderInstanceEnvironment.ts";
+import { readBobDatabaseRecords } from "./usageBobDatabase.ts";
 import { UsageAggregator } from "./usageAggregation.ts";
 import { createOverrideRateTable, parseRateTable, type RateTable } from "./usagePricing.ts";
 import {
@@ -84,6 +86,7 @@ const CACHE_RETENTION_DAYS = 90;
 
 const decodeCodexSettings = Schema.decodeOption(CodexSettings);
 const decodeClaudeSettings = Schema.decodeOption(ClaudeSettings);
+const decodeBobSettings = Schema.decodeOption(BobSettings);
 
 /** On-disk shape of the rate snapshot. */
 const RatesCacheFile = Schema.Struct({
@@ -337,6 +340,72 @@ export const make = Effect.gen(function* () {
   });
 
   /**
+   * Resolves the Bob database path for each configured Bob instance.
+   *
+   * Unlike the other providers, Bob stores usage in a single SQLite file
+   * (`<home>/db/bob.db`) rather than a directory tree of JSONL transcripts.
+   */
+  const resolveBobDatabases = Effect.fn("UsageService.resolveBobDatabases")(function* (
+    settings: ServerSettingsValue,
+  ) {
+    const dbs: Array<{ dbPath: string }> = [];
+    const seen = new Set<string>();
+    const instances: Array<Pick<ProviderInstanceConfig, "config" | "environment">> = Object.values(
+      settings.providerInstances,
+    ).filter((instance) => instance.driver === "bob");
+    if (!Object.hasOwn(settings.providerInstances, "bob")) {
+      instances.push({ config: settings.providers.bob });
+    }
+    for (const instance of instances) {
+      const environment = mergeProviderInstanceEnvironment(instance.environment, hostEnvironment);
+      const decoded = decodeBobSettings(instance.config ?? {});
+      if (Option.isNone(decoded)) continue;
+      const configured = decoded.value.homePath.trim();
+      const home = configured
+        ? expandHomePath(configured)
+        : expandHomePath(environment.BOB_HOME?.trim() || path.join(NodeOS.homedir(), ".bob"));
+      const dbPath = path.join(home, "db", "bob.db");
+      const resolved = yield* fileSystem.realPath(dbPath).pipe(Effect.orElseSucceed(() => dbPath));
+      if (seen.has(resolved)) continue;
+      seen.add(resolved);
+      dbs.push({ dbPath: resolved });
+    }
+    return dbs;
+  });
+
+  /** Scans all resolved Bob databases for usage in the given window. */
+  interface ScannedBobDb {
+    readonly dbPath: string;
+    readonly volumeId: string;
+    /** Records found, or `null` when the database does not exist. */
+    readonly records: readonly UsageRecord[] | null;
+  }
+
+  const collectBobDatabases = Effect.fn("UsageService.collectBobDatabases")(function* (
+    windowStartMs: number,
+    windowUntilMs: number,
+    settings: ServerSettingsValue,
+  ) {
+    const dbs = yield* resolveBobDatabases(settings).pipe(Effect.provideService(Path.Path, path));
+    const scanned: ScannedBobDb[] = [];
+    for (const { dbPath } of dbs) {
+      const volumeId = yield* Effect.promise(() => readDirectoryVolumeId(path.dirname(dbPath)));
+      const exists = yield* fileSystem
+        .exists(dbPath)
+        .pipe(Effect.catchCause(() => Effect.succeed(false)));
+      if (!exists) {
+        scanned.push({ dbPath, volumeId, records: null });
+        continue;
+      }
+      const records = yield* Effect.promise(() =>
+        Promise.resolve(readBobDatabaseRecords(dbPath, windowStartMs, windowUntilMs)),
+      );
+      scanned.push({ dbPath, volumeId, records });
+    }
+    return scanned;
+  });
+
+  /**
    * Loads the persisted scan cache exactly once per process.
    *
    * `Effect.cached` makes concurrent first readers await the same load rather
@@ -532,15 +601,22 @@ export const make = Effect.gen(function* () {
     }
     const windowStartMs =
       (hourlyWindow?.sinceTimeMs ?? DateTime.toEpochMillis(windowStart.value)) - MTIME_SLACK_MS;
+    // Exclusive upper bound: midnight of the day after untilDay, in UTC.
+    const windowUntilMs =
+      hourlyWindow?.untilTimeMs ?? Date.parse(`${input.untilDay}T00:00:00Z`) + 24 * 60 * 60 * 1000;
 
     const retentionCutoffMs = startedAtMs - CACHE_RETENTION_DAYS * 24 * 60 * 60 * 1000;
 
     // Pricing only matters once records are aggregated, so the rate table
     // loads while transcripts stream instead of gating them: a cold rates
     // fetch on a slow network no longer delays the scan by its own timeout.
-    const [, scannedDirs] = yield* Effect.all(
-      [ensureRates(false), collectDirs(windowStartMs, settings, retentionCutoffMs)],
-      { concurrency: 2 },
+    const [, scannedDirs, scannedBobDbs] = yield* Effect.all(
+      [
+        ensureRates(false),
+        collectDirs(windowStartMs, settings, retentionCutoffMs),
+        collectBobDatabases(windowStartMs, windowUntilMs, settings),
+      ],
+      { concurrency: 3 },
     );
 
     const aggregator = new UsageAggregator({
@@ -616,6 +692,37 @@ export const make = Effect.gen(function* () {
         malformedRecords: 0,
         distinctSessions: sessionIds.size,
         message: files === null ? "No transcript directory on this environment." : null,
+      });
+    }
+
+    // Aggregate Bob SQLite records — one source entry per database file.
+    for (const { dbPath, volumeId, records } of scannedBobDbs) {
+      if (records === null) {
+        sources.push({
+          fingerprint: { hostId, provider: "bob", resolvedHomePath: dbPath, volumeId },
+          status: "missing",
+          scannedFiles: 0,
+          skippedFiles: 0,
+          malformedRecords: 0,
+          distinctSessions: 0,
+          message: "No Bob database on this environment.",
+        });
+        continue;
+      }
+      const sessionIds = new Set<string>();
+      for (const record of records) {
+        if (aggregator.add(record) && record.sessionId.length > 0) {
+          sessionIds.add(record.sessionId);
+        }
+      }
+      sources.push({
+        fingerprint: { hostId, provider: "bob", resolvedHomePath: dbPath, volumeId },
+        status: "ok",
+        scannedFiles: records.length > 0 ? 1 : 0,
+        skippedFiles: 0,
+        malformedRecords: 0,
+        distinctSessions: sessionIds.size,
+        message: null,
       });
     }
 

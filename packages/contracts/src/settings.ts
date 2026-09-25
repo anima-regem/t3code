@@ -856,12 +856,21 @@ export const BobSettings = makeProviderSettingsSchema(
         },
       }),
     ),
+    homePath: TrimmedString.pipe(
+      Schema.withDecodingDefault(Effect.succeed("")),
+      Schema.annotateKey({
+        title: "Bob home path",
+        description:
+          "Custom Bob home directory (~/.bob by default). Used to locate the usage database.",
+        providerSettingsForm: { placeholder: "~/.bob", clearWhenEmpty: "omit" },
+      }),
+    ),
     customModels: Schema.Array(CustomModelSetting).pipe(
       Schema.withDecodingDefault(Effect.succeed([])),
       Schema.annotateKey({ providerSettingsForm: { hidden: true } }),
     ),
   },
-  { order: ["binaryPath", "apiKey"] },
+  { order: ["binaryPath", "homePath", "apiKey"] },
 );
 export type BobSettings = typeof BobSettings.Type;
 
@@ -1468,6 +1477,7 @@ const BobSettingsPatch = Schema.Struct({
   enabled: Schema.optionalKey(Schema.Boolean),
   binaryPath: Schema.optionalKey(TrimmedString),
   apiKey: Schema.optionalKey(TrimmedString),
+  homePath: Schema.optionalKey(TrimmedString),
   customModels: Schema.optionalKey(Schema.Array(CustomModelSetting)),
 });
 
